@@ -1,42 +1,39 @@
 import io.github.cdimascio.dotenv.Dotenv;
+import io.github.cdimascio.dotenv.DotenvException;
 
+import java.io.IOException;
 import java.sql.*;
+import java.util.InputMismatchException;
 import java.util.Scanner;
 
 public class Main {
 
     public static void main(String[] args) {
-
         try {
             Dotenv dotenv = Dotenv.configure().load();
             String url = dotenv.get("DB_URL");
             String user = dotenv.get("DB_USER");
             String password = dotenv.get("DB_PASSWORD");
-            Connection conn = DriverManager.getConnection(url, user, password);
+            try (Connection conn = DriverManager.getConnection(url, user, password)) {
+                TableCreationStatus resultCreateTable = createTable(conn);
+                if (resultCreateTable == TableCreationStatus.CREATED) {
+                    System.out.println("Таблица cars создана успешно!");
+                } else if (resultCreateTable == TableCreationStatus.ERROR) {
+                    System.err.println("Не удалось создать таблицу cars");
+                }
 
-            Statement stmt = conn.createStatement();
-
-            TableCreationStatus resultCreateTable = createTable(stmt);
-            if(resultCreateTable == TableCreationStatus.CREATED){
-                System.out.println("Таблица cars создана успешно!");
-            }else if(resultCreateTable == TableCreationStatus.ERROR){
-                System.err.println("Не удалось создать таблицу cars");
-            }
-
-            TableCreationStatus resultInsertAuto = insertSampleCarData(conn);
+            /* TableCreationStatus resultInsertAuto = insertSampleCarData(conn);
             if(resultInsertAuto == TableCreationStatus.CREATED){
                 System.out.println("Данные успешно добавлены!");
             }else if(resultInsertAuto == TableCreationStatus.ERROR){
                 System.err.println("Не удалось добавить данные в таблицу cars");
+            }*/
+                run(conn);
+            }catch (SQLException e) {
+                e.printStackTrace();
             }
-
-            run(conn);
-
-
-            stmt.close();
-            conn.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
+        }catch (DotenvException ex){
+            ex.printStackTrace();
         }
 
     }
@@ -47,8 +44,9 @@ public class Main {
         ERROR           // Произошла ошибка
     }
 
-    public static TableCreationStatus createTable(Statement stmt) {
-        try (ResultSet rs = stmt.executeQuery(
+    public static TableCreationStatus createTable(Connection conn) {
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
                 "SELECT COUNT(*) FROM information_schema.tables " +
                         "WHERE table_schema = DATABASE() AND table_name = 'cars'")) {
 
@@ -68,7 +66,6 @@ public class Main {
                             "car_type VARCHAR(20)" +
                             ")");
             return TableCreationStatus.CREATED;
-
         } catch (SQLException e) {
             e.printStackTrace();
             return TableCreationStatus.ERROR;
@@ -76,54 +73,58 @@ public class Main {
     }
 
     public static TableCreationStatus insertSampleCarData(Connection conn) {
-        Object[][] sampleData = {
-                {"Toyota", "Camry", 2.5, 2023, "Silver", "Sedan"},
-                {"BMW", "X5", 3.0, 2022, "Black", "SUV"},
-                {"Ford", "Mustang", 5.0, 1969, "Blue", "Coupe"},
-                {"Honda", "Civic", 1.8, 2021, "White", "Hatchback"},
-                {"Volkswagen", "Passat", 2.0, 2022, "Gray", "Sedan"}
-        };
+        try (Statement stmt = conn.createStatement()) {
+            Object[][] sampleData = {
+                    {"Toyota", "Camry", 2.5, 2023, "Silver", "Sedan"},
+                    {"BMW", "X5", 3.0, 2022, "Black", "SUV"},
+                    {"Ford", "Mustang", 5.0, 1969, "Blue", "Coupe"},
+                    {"Honda", "Civic", 1.8, 2021, "White", "Hatchback"},
+                    {"Volkswagen", "Passat", 2.0, 2022, "Gray", "Sedan"}
+            };
 
-        String sql = "INSERT INTO cars " +
-                "(manufacturer, model, engine_volume, year, color, car_type) " +
-                "VALUES (?, ?, ?, ?, ?, ?)";
+            String sql = "INSERT INTO cars " +
+                    "(manufacturer, model, engine_volume, year, color, car_type) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)";
 
-        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            int successCount = 0;
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                int successCount = 0;
 
-            for (Object[] row : sampleData) {
-                String manufacturer = (row[0] instanceof String) ? (String) row[0] : null;
-                String model = (row[1] instanceof String) ? (String) row[1] : null;
-                Double engineVolume = (row[2] instanceof Double) ? (Double) row[2] : null;
-                Integer year = (row[3] instanceof Integer) ? (Integer) row[3] : null;
-                String color = (row[4] instanceof String) ? (String) row[4] : null;
-                String carType = (row[5] instanceof String) ? (String) row[5] : null;
+                for (Object[] row : sampleData) {
+                    String manufacturer = (row[0] instanceof String) ? (String) row[0] : null;
+                    String model = (row[1] instanceof String) ? (String) row[1] : null;
+                    Double engineVolume = (row[2] instanceof Double) ? (Double) row[2] : null;
+                    Integer year = (row[3] instanceof Integer) ? (Integer) row[3] : null;
+                    String color = (row[4] instanceof String) ? (String) row[4] : null;
+                    String carType = (row[5] instanceof String) ? (String) row[5] : null;
 
-                pstmt.setString(1, manufacturer);
-                pstmt.setString(2, model);
-                pstmt.setObject(3, engineVolume);
-                pstmt.setObject(4, year);
-                pstmt.setString(5, color);
-                pstmt.setString(6, carType);
+                    pstmt.setString(1, manufacturer);
+                    pstmt.setString(2, model);
+                    pstmt.setObject(3, engineVolume);
+                    pstmt.setObject(4, year);
+                    pstmt.setString(5, color);
+                    pstmt.setString(6, carType);
 
-                int rowsAffected = pstmt.executeUpdate();
-                if (rowsAffected > 0) {
-                    successCount++;
+                    int rowsAffected = pstmt.executeUpdate();
+                    if (rowsAffected > 0) {
+                        successCount++;
+                    }
                 }
-            }
 
-            return (successCount == sampleData.length)
-                    ? TableCreationStatus.CREATED
-                    : TableCreationStatus.ERROR;
+                return (successCount == sampleData.length)
+                        ? TableCreationStatus.CREATED
+                        : TableCreationStatus.ERROR;
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return TableCreationStatus.ERROR;
+            }
         } catch (SQLException e) {
             e.printStackTrace();
             return TableCreationStatus.ERROR;
         }
+
     }
 
-
-
-    public static void run(Connection connection){
+    public static void run(Connection conn){
         while (true) {
             System.out.println();
             System.out.println("Каталог автомобилей");
@@ -138,45 +139,54 @@ public class Main {
             System.out.println("0. выход");
             System.out.println("Выберите пункт меню:");
 
-            int choice = scanner.nextInt();
-            switch (choice) {
-                case 1:
-                    showAllCars(connection,scanner);
-                    break;
-                case 2:
-                    showAllManufacturers(connection,scanner);
-                    break;
-                case 3:
-                    showCarsByManufacturer(connection,scanner);
-                    break;
-                case 4:
-                    showCarsByYear(connection,scanner);
-                    break;
-                case 5:
-                    filterCarsByColor(connection,scanner);
-                    break;
-                case 6:
-                    filterCarsByEngineVolume(connection,scanner);
-                    break;
-                case 7:
-                    filterCarsByType(connection,scanner);
-                    break;
-                case 0:
-                    exit();
-                    scanner.close();
-                    return;
-                default:
-                    System.out.println("Неверный выбор. Попробуйте ещё раз");
+            try {
+                int choice = scanner.nextInt();
+
+                switch (choice) {
+                    case 1:
+                        showAllCars(conn);
+                        break;
+                    case 2:
+                        showAllManufacturers();
+                        break;
+                    case 3:
+                        showCarsByManufacturer();
+                        break;
+                    case 4:
+                        showCarsByYear();
+                        break;
+                    case 5:
+                        filterCarsByColor();
+                        break;
+                    case 6:
+                        filterCarsByEngineVolume();
+                        break;
+                    case 7:
+                        filterCarsByType();
+                        break;
+                    case 0:
+                        exit();
+                        scanner.close();
+                        return;
+                    default:
+                        System.out.println("Неверный выбор. Попробуйте ещё раз");
+                }
             }
+            catch (InputMismatchException e) {
+                e.printStackTrace();
+            }
+
         }
     }
-    public static void showAllCars(Connection connection,Scanner scanner){}
-    public static void showAllManufacturers(Connection connection,Scanner scanner){}
-    public static void showCarsByManufacturer(Connection connection,Scanner scanner){}
-    public static void showCarsByYear(Connection connection,Scanner scanner){}
-    public static void filterCarsByColor(Connection connection,Scanner scanner){}
-    public static void filterCarsByEngineVolume(Connection connection,Scanner scanner){}
-    public static void filterCarsByType(Connection connection,Scanner scanner){}
+    public static void showAllCars(Connection conn){
+
+    }
+    public static void showAllManufacturers(){}
+    public static void showCarsByManufacturer(){}
+    public static void showCarsByYear(){}
+    public static void filterCarsByColor(){}
+    public static void filterCarsByEngineVolume(){}
+    public static void filterCarsByType(){}
 
     public static void exit(){
         System.out.println("Спасибо за использование нашего приложения!");
